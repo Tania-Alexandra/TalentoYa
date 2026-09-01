@@ -1,0 +1,135 @@
+@startuml Arquitectura_TalentoYa
+!theme vibrant
+skinparam roundcorner 10
+skinparam defaultFontName "Segoe UI"
+skinparam defaultFontSize 11
+skinparam packageTitleAlignment left
+
+skinparam rectangle {
+    BackgroundColor #F8F9FA
+    BorderColor #6C757D
+}
+
+skinparam component {
+    BackgroundColor #FFFFFF
+    BorderColor #0D6EFD
+    ArrowColor #0D6EFD
+}
+
+skinparam database {
+    BackgroundColor #E9F7EF
+    BorderColor #28A745
+}
+
+skinparam queue {
+    BackgroundColor #FFF3CD
+    BorderColor #FFC107
+}
+
+title <size:18><b>Arquitectura de Microservicios Cloud Native - Talento Ya</b></size>\n<size:12>Diseño de Alta Disponibilidad, Desacoplamiento y Seguridad (Evaluación Parcial)</size>
+
+' ==========================================
+' CAPA DE CLIENTES
+' ==========================================
+package "1. Capa Clientes / Frontend" as CapaClientes #EBF5FB {
+    [App Movil\n(Flutter / Kotlin)] as AppMovil
+    [Web Postulantes\n(React SPA)] as WebPostulante
+    [Portal B2B Empresas\n(Next.js / React)] as PortalEmpresa
+}
+
+' ==========================================
+' CAPA EDGE & SEGURIDAD
+' ==========================================
+package "2. Capa Edge & Seguridad Perimetral (AWS)" as CapaSeguridad #FADBD8 {
+    [AWS WAF & Shield\n(Anti-DDoS / Rate Limiting)] as WAF
+    [Amazon API Gateway\n(OAuth 2.0 / JWT / Throttling)] as APIGateway
+    [AWS Cognito / IdP\n(Autenticacion & RBAC)] as Cognito
+    [AWS KMS & Secrets Manager\n(Cifrado de Llaves y Secretos)] as KMS
+}
+
+AppMovil --> WAF : HTTPS / TLS 1.3
+WebPostulante --> WAF : HTTPS / TLS 1.3
+PortalEmpresa --> WAF : HTTPS / TLS 1.3
+WAF --> APIGateway
+APIGateway .right.> Cognito : Valida Claims JWT
+APIGateway .down.> KMS : Cifrado en tránsito
+
+' ==========================================
+' NUCLEO DE MICROSERVICIOS
+' ==========================================
+package "3. Nucleo de Microservicios (AWS ECS Fargate / VPC Privada)" as CapaCore #E8F8F5 {
+    
+    component " **ms-perfiles**\n(Spring Boot 3)\n- Candidatos y Empresas\n- CVs y Portafolios" as MSPerfiles #FFFFFF
+    
+    component " **ms-busqueda**\n(Spring Boot 3)\n- Motor de Busqueda\n- Circuit Breaker (Resilience4j)" as MSBusqueda #FFFFFF
+    
+    component " **ms-postulaciones**\n(Spring Boot 3 - Core)\n- Postulacion 1-Clic\n- Orquestación Inicial" as MSPostulaciones #FFFFFF
+    
+    component " **ms-mensajeria**\n(Spring Boot)\n- Chat en Tiempo Real\n- WebSockets" as MSMensajeria #FFFFFF
+    
+    component " **ms-historial**\n(Spring Boot 3)\n- Reputacion y Feedback\n- Auditoria de Procesos" as MSHistorial #FFFFFF
+    
+    component " **ms-facturacion**\n(Spring Boot 3)\n- Pagos y Comisiones\n- Facturacion Electrónica" as MSFacturacion #FFFFFF
+}
+
+APIGateway --> MSPerfiles : /api/v1/perfiles
+APIGateway --> MSBusqueda : /api/v1/busqueda
+APIGateway --> MSPostulaciones : /api/v1/postulaciones
+APIGateway --> MSMensajeria : /api/v1/mensajes
+APIGateway --> MSHistorial : /api/v1/historial
+APIGateway --> MSFacturacion : /api/v1/facturacion
+
+' ==========================================
+' CAPA ASÍNCRONA Y EVENTOS
+' ==========================================
+package "4. Capa Asíncrona y Procesamiento Serverless" as CapaAsincrona #FEF9E7 {
+    queue "AWS SQS\n(Cola de Postulaciones)" as SQSPostulaciones
+    queue "AWS SQS (DLQ)\n(Dead Letter Queue - Reintentos)" as DLQ
+    [AWS Lambda Worker\n(Procesador de Postulaciones)] as LambdaWorker
+    [Amazon EventBridge / SNS\n(Bus de Eventos Fan-out)] as EventBus
+    [AWS Lambda / ms-notificaciones\n(Push, Email SES, SMS < 60s)] as MSNotificaciones
+}
+
+' Flujo Crítico 1-Clic
+MSPostulaciones -down-> SQSPostulaciones : 1. Encola solicitud (Bajo Acoplamiento)
+SQSPostulaciones -right-> DLQ : Reenvío tras 3 fallos
+SQSPostulaciones -down-> LambdaWorker : 2. Consumo por lotes
+LambdaWorker -down-> EventBus : 3. Publica evento 'PostulacionCreada'
+EventBus -right-> MSNotificaciones : 4. Dispara alerta inmediata (<60s)
+
+' ==========================================
+' CAPA DE DATOS (Database-per-Service)
+' ==========================================
+package "5. Capa de Almacenamiento (Database-per-Service)" as CapaDatos #EAFAF1 {
+    database "Aurora PostgreSQL\n(db_perfiles)" as DBPerfiles
+    database "Amazon OpenSearch\n(Indice de Ofertas y Talentos)" as DBOpenSearch
+    database "Amazon ElastiCache\n(Redis Cache <500ms)" as DBRedis
+    database "Aurora PostgreSQL\n(db_postulaciones)" as DBPostulaciones
+    database "Amazon DynamoDB\n(Chats y Mensajes NoSQL)" as DBDynamo
+    database "Aurora PostgreSQL\n(db_historial)" as DBHistorial
+    database "Aurora PostgreSQL\n(db_facturacion)" as DBFacturacion
+    file " Amazon S3\n(Storage de CVs y Portafolios)" as S3Storage
+}
+
+MSPerfiles --> DBPerfiles
+MSPerfiles --> S3Storage
+MSBusqueda --> DBOpenSearch
+MSBusqueda --> DBRedis
+LambdaWorker --> DBPostulaciones : Persistencia final
+MSMensajeria --> DBDynamo
+MSHistorial --> DBHistorial
+MSFacturacion --> DBFacturacion
+
+' ==========================================
+' OBSERVABILIDAD Y MONITOREO
+' ==========================================
+package "6. Monitoreo & Trazabilidad" as CapaMonitoreo #F4F6F7 {
+    [AWS CloudWatch\n(Logs, Métricas y Alarmas CPU/Cola)] as CloudWatch
+    [AWS X-Ray\n(Trazabilidad Distribuida End-to-End)] as XRay
+}
+
+CapaCore .right.> CloudWatch : Telemetría
+CapaCore .right.> XRay : Trace IDs
+CapaAsincrona .right.> CloudWatch : Métricas de cola
+
+@enduml
