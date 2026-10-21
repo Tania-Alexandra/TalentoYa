@@ -70,7 +70,7 @@ Desde el directorio del microservicio:
 ./mvnw spring-boot:run
 ```
 
-El servicio usa el puerto `8080` por defecto. Se puede cambiar con la variable de entorno `PORT`.
+El microservicio de perfiles usa el puerto `8080` por defecto; Historial usa `8081` para evitar conflictos. El puerto se puede cambiar con la variable de entorno `PORT`.
 
 ## 6. Persistencia y Consola H2 (IE4 e IE5)
 
