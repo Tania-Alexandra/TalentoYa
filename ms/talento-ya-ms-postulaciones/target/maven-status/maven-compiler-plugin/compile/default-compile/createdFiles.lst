@@ -1,6 +1,0 @@
-cl\duoc\jv0101\caso02\postulaciones\model\Postulacion.class
-cl\duoc\jv0101\caso02\postulaciones\controller\PostulacionController.class
-cl\duoc\jv0101\caso02\postulaciones\service\PostulacionService.class
-cl\duoc\jv0101\caso02\postulaciones\config\OpenApiConfig.class
-cl\duoc\jv0101\caso02\postulaciones\repository\PostulacionRepository.class
-cl\duoc\jv0101\caso02\postulaciones\PostulacionApplication.class
