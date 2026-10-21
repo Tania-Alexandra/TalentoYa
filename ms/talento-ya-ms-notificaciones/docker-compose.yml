@@ -4,5 +4,7 @@ services:
     image: duoc/jv0101-caso02-notificaciones:1.0.0
     container_name: caso02-notificaciones-svc
     ports:
-      - "${PORT:-8080}:8080"
+      - "${NOTIFICACIONES_PORT:-8084}:8080"
+    environment:
+      PORT: "8080"
     restart: unless-stopped

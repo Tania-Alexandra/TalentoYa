@@ -70,13 +70,25 @@ Desde el directorio del microservicio:
 ./mvnw spring-boot:run
 ```
 
-El microservicio de perfiles usa el puerto `8080` por defecto; Historial usa `8081` para evitar conflictos. El puerto se puede cambiar con la variable de entorno `PORT`.
+Para ejecutar todos los microservicios simultáneamente, cada uno usa un puerto local distinto:
+
+| Microservicio | Puerto |
+| :--- | :--- |
+| Perfiles | `8080` |
+| Historial | `8081` |
+| Postulaciones | `8082` |
+| Búsqueda | `8083` |
+| Notificaciones | `8084` |
+| Mensajería | `8085` |
+| Facturación | `8086` |
+
+En ejecución local, el puerto se puede cambiar con la variable de entorno `PORT`. Docker Compose publica cada servicio en el puerto de la tabla y conserva el puerto interno `8080`; para personalizar el puerto publicado, usa una variable específica: `PERFILES_PORT`, `HISTORIAL_PORT`, `POSTULACIONES_PORT`, `BUSQUEDA_PORT`, `NOTIFICACIONES_PORT`, `MENSAJERIA_PORT` o `FACTURACION_PORT`.
 
 ## 6. Persistencia y Consola H2 (IE4 e IE5)
 
 Cada microservicio tiene una base H2 en memoria configurada con JPA/Hibernate. Para perfiles, con el servicio en ejecución:
 
-* **Consola:** `http://localhost:8080/h2-console`
+* **Consola:** `http://localhost:8080/h2-console` (Perfiles; usa el puerto correspondiente para los demás microservicios)
 * **Driver:** `org.h2.Driver`
 * **JDBC URL:** `jdbc:h2:mem:perfilesdb;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE`
 * **Usuario:** `sa`

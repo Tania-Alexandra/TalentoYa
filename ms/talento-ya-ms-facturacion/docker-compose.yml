@@ -4,5 +4,7 @@ services:
     image: duoc/jv0101-caso02-facturacion:1.0.0
     container_name: caso02-facturacion-svc
     ports:
-      - "${PORT:-8080}:8080"
+      - "${FACTURACION_PORT:-8086}:8080"
+    environment:
+      PORT: "8080"
     restart: unless-stopped

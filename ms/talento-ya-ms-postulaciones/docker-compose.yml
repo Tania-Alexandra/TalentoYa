@@ -4,5 +4,7 @@ services:
     image: duoc/jv0101-caso02-postulaciones:1.0.0
     container_name: caso02-postulaciones-svc
     ports:
-      - "${PORT:-8080}:8080"
+      - "${POSTULACIONES_PORT:-8082}:8080"
+    environment:
+      PORT: "8080"
     restart: unless-stopped
