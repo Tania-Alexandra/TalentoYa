@@ -1,0 +1,10 @@
+services:
+  busqueda-ofertas-svc:
+    build: .
+    image: duoc/jv0101-caso02-busqueda-ofertas:1.0.0
+    container_name: caso02-busqueda-ofertas-svc
+    ports:
+      - "${BUSQUEDA_PORT:-8083}:8080"
+    environment:
+      PORT: "8080"
+    restart: unless-stopped
