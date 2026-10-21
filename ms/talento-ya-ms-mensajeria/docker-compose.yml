@@ -1,0 +1,8 @@
+services:
+  mensajeria-svc:
+    build: .
+    image: duoc/jv0101-caso02-mensajeria:1.0.0
+    container_name: caso02-mensajeria-svc
+    ports:
+      - "${PORT:-8080}:8080"
+    restart: unless-stopped
