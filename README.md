@@ -115,7 +115,140 @@ Los siguientes elementos forman parte de los drivers y patrones definidos para l
 * **Queue-Based Load Leveling:** Amortiguación de tráfico concurrente con AWS SQS.
 * **Database-per-Service:** Desacoplamiento del modelo de datos por servicio.
 
-## 9. Integrantes
+## 9. Despliegue Distribuido con Docker Swarm (EP03 - IE3, IE7, IE8, IE9)
+
+El repositorio incluye un [`docker-compose.yml`](docker-compose.yml) global adaptado a **Docker Swarm** (sin directivas incompatibles como `build` o `container_name`, con red `overlay`, límites de recursos, políticas de actualización *zero-downtime* y réplicas configurables), junto con [`docker-compose.build.yml`](docker-compose.build.yml) para construir las 7 imágenes y scripts de administración en [`scripts/swarm/`](scripts/swarm/).
+
+### 9.1. Construir las imágenes Docker
+
+Antes de desplegar en Swarm, construye las 7 imágenes optimizadas (multi-stage Alpine + Spring Boot layered JAR + usuario no-root):
+
+```bash
+# Linux / macOS / Git Bash
+./scripts/swarm/01-build-images.sh
+
+# Windows PowerShell
+.\scripts\swarm\01-build-images.ps1
+```
+
+Para publicar en un registry remoto (por ejemplo GitHub Container Registry):
+
+```bash
+DOCKER_REGISTRY=ghcr.io/tania-alexandra IMAGE_TAG=1.0.0 PUSH=true ./scripts/swarm/01-build-images.sh
+```
+
+### 9.2. Inicializar el clúster (nodo Manager principal)
+
+```bash
+# Linux / macOS / Git Bash (opcional: pasar IP anunciada como argumento)
+./scripts/swarm/02-init-swarm.sh
+
+# Windows PowerShell
+.\scripts\swarm\02-init-swarm.ps1
+```
+
+Este paso ejecuta `docker swarm init`, crea la red `overlay` (`talentoya-net`) e imprime los tokens de unión para nodos **worker** y **manager**.
+
+### 9.3. Añadir nodos Worker y Manager al clúster
+
+1. **Obtener los tokens de unión** desde el nodo Manager principal:
+   ```bash
+   docker swarm join-token worker    # Token para nodos de cómputo (workers)
+   docker swarm join-token manager   # Token para nodos de control (managers)
+   ```
+2. **Unir un nodo Worker** (ejecutar el comando generado en la máquina worker):
+   ```bash
+   docker swarm join --token <SWMTKN-WORKER> <IP-MANAGER>:2377
+   ```
+3. **Unir un nodo Manager adicional** (para alta disponibilidad del plano de control mediante quórum Raft; se recomienda número impar de managers: 1, 3 o 5):
+   ```bash
+   docker swarm join --token <SWMTKN-MANAGER> <IP-MANAGER>:2377
+   ```
+4. **Verificar y administrar roles de nodos** desde cualquier Manager:
+   ```bash
+   docker node ls                        # Lista nodos, estado y rol (Leader / Reachable / Worker)
+   docker node promote <NODE-HOSTNAME>   # Promueve un worker a manager
+   docker node demote <NODE-HOSTNAME>    # Degrada un manager a worker
+   ```
+
+### 9.4. Desplegar los servicios distribuidos (`docker stack deploy`)
+
+```bash
+# Linux / macOS / Git Bash
+./scripts/swarm/03-deploy-stack.sh
+
+# Windows PowerShell
+.\scripts\swarm\03-deploy-stack.ps1
+```
+
+Comandos útiles de verificación:
+
+```bash
+docker stack services talentoya               # Estado y réplicas (ej. 2/2) de los 7 servicios
+docker stack ps talentoya                     # Distribución de tareas/contenedores por nodo
+docker service logs -f talentoya_postulaciones-svc
+```
+
+> El enrutamiento **ingress (Routing Mesh)** de Swarm permite consultar cualquier servicio usando el puerto publicado (`8080`–`8086`) en la IP de **cualquier** nodo del clúster.
+
+### 9.5. Escalado dinámico de réplicas (IE8)
+
+Para ajustar réplicas hacia arriba o abajo según demanda sin detener el servicio:
+
+```bash
+# Usando el script incluido
+./scripts/swarm/04-scale-demo.sh talentoya_postulaciones-svc 4
+
+# O directamente con Docker CLI
+docker service scale talentoya_postulaciones-svc=4 talentoya_busqueda-ofertas-svc=3
+docker service ps talentoya_postulaciones-svc
+
+# Reducir réplicas tras el pico de carga
+docker service scale talentoya_postulaciones-svc=2
+```
+
+### 9.6. Decisiones técnicas del clúster (IE9)
+
+* **Escalabilidad:** Servicios críticos de mayor tráfico (`perfiles-svc`, `postulaciones-svc`, `busqueda-ofertas-svc`) inician con `replicas: 2` y el resto con `1`, parametrizables por variables de entorno (`*_REPLICAS`) y escalables en caliente con `docker service scale`. La preferencia `spread: node.id` distribuye las réplicas equitativamente entre nodos.
+* **Disponibilidad:** Red `overlay` (`talentoya-net`) + **Ingress Routing Mesh** balancean carga automáticamente entre réplicas saludables. Los `HEALTHCHECK` HTTP sobre `/v3/api-docs` junto con `restart_policy: on-failure` y `update_config` (`order: start-first`, `failure_action: rollback`) evitan cortes durante despliegues o fallos.
+* **Mantenibilidad:** Límites explícitos de CPU/RAM (`limits`/`reservations`) alineados con `-XX:MaxRAMPercentage=75.0` en la JVM evitan contención de recursos entre microservicios, mientras que el archivo único `docker-compose.yml` versionado centraliza la topología distribuida.
+
+### 9.7. Eliminar el stack o salir del clúster
+
+```bash
+docker stack rm talentoya       # Elimina los servicios del stack
+docker swarm leave --force      # Saca el nodo del clúster Swarm
+```
+
+## 10. Pipeline CI/CD, API Gateway y Serverless (EP03 - IE4, IE5, IE10, IE11, IE12)
+
+### 10.1. Pipeline CI/CD en GitHub Actions
+
+Definido en [`.github/workflows/ci-cd.yml`](.github/workflows/ci-cd.yml), se ejecuta automáticamente ante `push` o `pull_request` sobre `main` y `develop`:
+
+1. **`test-microservices` y `test-serverless`:** Compilan, ejecutan pruebas unitarias + Cucumber BDD y validan cobertura JaCoCo 100% en los 7 microservicios y la función Lambda Java 21.
+2. **`build-and-push-images`:** Construyen y publican las 8 imágenes Docker (7 microservicios + `api-gateway`) en **GitHub Container Registry (`ghcr.io`)**.
+3. **`provision-cloud-infra` (IE5):** Provisiona automáticamente en AWS la **cola SQS + DLQ**, la **función Lambda** (con trigger SQS) y **Amazon API Gateway** mediante [`scripts/cloud/`](scripts/cloud/) y plantillas IaC ([`serverless/template.yaml`](serverless/template.yaml), [`api-gateway/aws-apigw-template.yaml`](api-gateway/aws-apigw-template.yaml)).
+4. **`deploy-swarm-cloud` (IE4 / IE6):** Despliega el stack actualizado en el nodo Manager de Docker Swarm vía SSH y ejecuta una verificación HTTP contra el API Gateway.
+
+#### Secrets requeridos en GitHub (`Settings > Secrets and variables > Actions`)
+
+| Secret | Descripción |
+| :--- | :--- |
+| `AWS_ACCESS_KEY_ID` | Access Key de AWS (IAM o AWS Academy) |
+| `AWS_SECRET_ACCESS_KEY` | Secret Key de AWS |
+| `AWS_SESSION_TOKEN` | Session Token (obligatorio en AWS Academy; opcional en IAM) |
+| `SWARM_HOST` | IP o dominio público del nodo Manager de Docker Swarm en la nube |
+| `SWARM_USER` | Usuario SSH del servidor (ej. `ubuntu` o `ec2-user`) |
+| `SWARM_SSH_KEY` | Clave privada SSH para conectar al nodo Manager |
+| `GATEWAY_API_KEY` | API Key para proteger rutas `/api/*` (por defecto `talentoya-secret-key-2026`) |
+
+### 10.2. API Gateway y Arquitectura Asíncrona
+
+* **API Gateway ([`api-gateway/`](api-gateway/README.md)):** Punto de entrada único en el puerto `8090` (y opcionalmente expuesto con Amazon API Gateway HTTP API v2). Aplica autenticación por header `X-API-Key`, *rate limiting* (`10 req/s`, `burst=20`), cabeceras de seguridad y bloqueo de `/h2-console`.
+* **Cola SQS + Lambda FaaS ([`serverless/procesador-postulaciones/`](serverless/procesador-postulaciones/README.md)):** `talento-ya-ms-postulaciones` publica cada postulación creada (`estado: EN_COLA`) en AWS SQS; la función AWS Lambda Java 21 consume el lote y actualiza la postulación a `PROCESADA` a través del API Gateway.
+
+## 11. Integrantes
 
 * **Estudiante 1:** Tania Gaete
 * **Estudiante 2:** Arianette Pavez

@@ -17,10 +17,17 @@ spring:
       path: /h2-console
 
 server:
-  port: ${PORT:8080}
+  port: ${PORT:8082}
 
 springdoc:
   api-docs:
     path: /v3/api-docs
   swagger-ui:
     path: /swagger-ui.html
+
+aws:
+  region: ${AWS_REGION:us-east-1}
+  sqs:
+    enabled: ${AWS_SQS_ENABLED:false}
+    queue-url: ${AWS_SQS_QUEUE_URL:}
+    endpoint-override: ${AWS_SQS_ENDPOINT:}

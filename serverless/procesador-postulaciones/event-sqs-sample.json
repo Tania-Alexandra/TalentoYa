@@ -1,0 +1,25 @@
+{
+  "Records": [
+    {
+      "messageId": "19dd0b57-b21e-4ac1-bd88-01bbb068cb78",
+      "receiptHandle": "MessageReceiptHandle",
+      "body": "{\"id\":1,\"nombre\":\"Tania Gaete\",\"oferta\":\"Desarrollador Java Cloud\",\"estado\":\"EN_COLA\",\"evento\":\"PostulacionCreada\",\"timestamp\":\"2026-11-25T18:00:00Z\"}",
+      "attributes": {
+        "ApproximateReceiveCount": "1",
+        "SentTimestamp": "1795629600000",
+        "SenderId": "123456789012",
+        "ApproximateFirstReceiveTimestamp": "1795629600010"
+      },
+      "messageAttributes": {
+        "eventType": {
+          "stringValue": "PostulacionCreada",
+          "dataType": "String"
+        }
+      },
+      "md5OfBody": "e4e68fb7bd0e697a0ae8f1bb342846b3",
+      "eventSource": "aws:sqs",
+      "eventSourceARN": "arn:aws:sqs:us-east-1:123456789012:talentoya-postulaciones-queue-dev",
+      "awsRegion": "us-east-1"
+    }
+  ]
+}

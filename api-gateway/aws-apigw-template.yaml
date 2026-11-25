@@ -1,0 +1,170 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  TalentoYa (JVY0101) - Amazon API Gateway (HTTP API v2) para proteccion,
+  throttling y enrutamiento perimetral hacia el backend en Docker Swarm (IE12).
+
+Parameters:
+  EnvironmentName:
+    Type: String
+    Default: dev
+  BackendBaseUrl:
+    Type: String
+    Description: URL base publica del API Gateway/ALB del cluster Swarm (ej. http://ec2-x-x-x-x.compute-1.amazonaws.com:8090)
+
+Resources:
+  TalentoYaHttpApi:
+    Type: AWS::ApiGatewayV2::Api
+    Properties:
+      Name: !Sub talentoya-api-gateway-${EnvironmentName}
+      ProtocolType: HTTP
+      CorsConfiguration:
+        AllowOrigins:
+          - "*"
+        AllowMethods:
+          - GET
+          - POST
+          - PUT
+          - DELETE
+          - OPTIONS
+        AllowHeaders:
+          - Content-Type
+          - Authorization
+          - X-API-Key
+
+  BackendIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref TalentoYaHttpApi
+      IntegrationType: HTTP_PROXY
+      IntegrationMethod: ANY
+      IntegrationUri: !Sub "${BackendBaseUrl}/{proxy}"
+      PayloadFormatVersion: "1.0"
+
+  HealthIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref TalentoYaHttpApi
+      IntegrationType: HTTP_PROXY
+      IntegrationMethod: GET
+      IntegrationUri: !Sub "${BackendBaseUrl}/health"
+      PayloadFormatVersion: "1.0"
+
+  HealthRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref TalentoYaHttpApi
+      RouteKey: "GET /health"
+      Target: !Sub "integrations/${HealthIntegration}"
+
+  PerfilesRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref TalentoYaHttpApi
+      RouteKey: "ANY /api/perfiles/{proxy+}"
+      Target: !Sub "integrations/${BackendIntegration}"
+
+  PerfilesRootRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref TalentoYaHttpApi
+      RouteKey: "ANY /api/perfiles"
+      Target: !Sub "integrations/${BackendIntegration}"
+
+  HistorialRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref TalentoYaHttpApi
+      RouteKey: "ANY /api/registroLaborales/{proxy+}"
+      Target: !Sub "integrations/${BackendIntegration}"
+
+  HistorialRootRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref TalentoYaHttpApi
+      RouteKey: "ANY /api/registroLaborales"
+      Target: !Sub "integrations/${BackendIntegration}"
+
+  PostulacionesRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref TalentoYaHttpApi
+      RouteKey: "ANY /api/postulaciones/{proxy+}"
+      Target: !Sub "integrations/${BackendIntegration}"
+
+  PostulacionesRootRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref TalentoYaHttpApi
+      RouteKey: "ANY /api/postulaciones"
+      Target: !Sub "integrations/${BackendIntegration}"
+
+  BusquedaRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref TalentoYaHttpApi
+      RouteKey: "ANY /api/ofertaTrabajos/{proxy+}"
+      Target: !Sub "integrations/${BackendIntegration}"
+
+  BusquedaRootRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref TalentoYaHttpApi
+      RouteKey: "ANY /api/ofertaTrabajos"
+      Target: !Sub "integrations/${BackendIntegration}"
+
+  NotificacionesRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref TalentoYaHttpApi
+      RouteKey: "ANY /api/notificaciones/{proxy+}"
+      Target: !Sub "integrations/${BackendIntegration}"
+
+  NotificacionesRootRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref TalentoYaHttpApi
+      RouteKey: "ANY /api/notificaciones"
+      Target: !Sub "integrations/${BackendIntegration}"
+
+  MensajeriaRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref TalentoYaHttpApi
+      RouteKey: "ANY /api/mensajes/{proxy+}"
+      Target: !Sub "integrations/${BackendIntegration}"
+
+  MensajeriaRootRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref TalentoYaHttpApi
+      RouteKey: "ANY /api/mensajes"
+      Target: !Sub "integrations/${BackendIntegration}"
+
+  FacturacionRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref TalentoYaHttpApi
+      RouteKey: "ANY /api/facturas/{proxy+}"
+      Target: !Sub "integrations/${BackendIntegration}"
+
+  FacturacionRootRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref TalentoYaHttpApi
+      RouteKey: "ANY /api/facturas"
+      Target: !Sub "integrations/${BackendIntegration}"
+
+  DefaultStage:
+    Type: AWS::ApiGatewayV2::Stage
+    Properties:
+      ApiId: !Ref TalentoYaHttpApi
+      StageName: "$default"
+      AutoDeploy: true
+      DefaultRouteSettings:
+        ThrottlingBurstLimit: 50
+        ThrottlingRateLimit: 25
+
+Outputs:
+  ApiGatewayUrl:
+    Description: URL publica de Amazon API Gateway
+    Value: !GetAtt TalentoYaHttpApi.ApiEndpoint

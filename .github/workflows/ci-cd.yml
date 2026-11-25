@@ -1,0 +1,284 @@
+name: TalentoYa CI/CD & Cloud Provisioning
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  JAVA_VERSION: "21"
+  IMAGE_TAG: "1.0.0"
+
+jobs:
+  # ============================================================================
+  # Etapa 1A: Build, Test (Unit + Cucumber) y JaCoCo 100% de los 7 microservicios
+  # ============================================================================
+  test-microservices:
+    name: CI - ${{ matrix.service }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        service:
+          - talento-ya-ms-perfiles
+          - talento-ya-ms-historial
+          - talento-ya-ms-postulaciones
+          - talento-ya-ms-busqueda
+          - talento-ya-ms-notificaciones
+          - talento-ya-ms-mensajeria
+          - talento-ya-ms-facturacion
+    steps:
+      - name: Checkout repositorio
+        uses: actions/checkout@v4
+
+      - name: Configurar Java 21 (Temurin) y cache Maven
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+          cache: maven
+
+      - name: Compilar, ejecutar pruebas y validar cobertura JaCoCo
+        working-directory: ms/${{ matrix.service }}
+        run: |
+          chmod +x mvnw
+          ./mvnw -B verify
+
+  # ============================================================================
+  # Etapa 1B: Build y Test de la Funcion Serverless (AWS Lambda Java 21)
+  # ============================================================================
+  test-serverless:
+    name: CI - Lambda Procesador Postulaciones
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repositorio
+        uses: actions/checkout@v4
+
+      - name: Configurar Java 21 (Temurin) y cache Maven
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+          cache: maven
+
+      - name: Compilar, probar y empaquetar JAR Lambda
+        run: mvn -B -f serverless/procesador-postulaciones/pom.xml clean verify
+
+      - name: Publicar artefacto JAR Lambda
+        uses: actions/upload-artifact@v4
+        with:
+          name: procesador-postulaciones-jar
+          path: serverless/procesador-postulaciones/target/procesador-postulaciones-1.0.0.jar
+
+  # ============================================================================
+  # Etapa 2: Construccion y publicacion de imagenes Docker en GHCR
+  # ============================================================================
+  build-and-push-images:
+    name: Docker Build & Push - ${{ matrix.image_suffix }}
+    needs: [ test-microservices, test-serverless ]
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - context: api-gateway
+            image_suffix: api-gateway
+          - context: ms/talento-ya-ms-perfiles
+            image_suffix: perfiles
+          - context: ms/talento-ya-ms-historial
+            image_suffix: historial
+          - context: ms/talento-ya-ms-postulaciones
+            image_suffix: postulaciones
+          - context: ms/talento-ya-ms-busqueda
+            image_suffix: busqueda-ofertas
+          - context: ms/talento-ya-ms-notificaciones
+            image_suffix: notificaciones
+          - context: ms/talento-ya-ms-mensajeria
+            image_suffix: mensajeria
+          - context: ms/talento-ya-ms-facturacion
+            image_suffix: facturacion
+    steps:
+      - name: Checkout repositorio
+        uses: actions/checkout@v4
+
+      - name: Configurar Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Iniciar sesion en GitHub Container Registry (GHCR)
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Construir y publicar imagen Docker
+        env:
+          OWNER_RAW: ${{ github.repository_owner }}
+        run: |
+          OWNER_LC=$(echo "$OWNER_RAW" | tr '[:upper:]' '[:lower:]')
+          IMAGE_NAME="ghcr.io/${OWNER_LC}/jv0101-caso02-${{ matrix.image_suffix }}"
+          docker buildx build \
+            --platform linux/amd64 \
+            --push \
+            --cache-from type=gha,scope=${{ matrix.image_suffix }} \
+            --cache-to type=gha,mode=max,scope=${{ matrix.image_suffix }} \
+            -t "${IMAGE_NAME}:${{ env.IMAGE_TAG }}" \
+            -t "${IMAGE_NAME}:${{ github.sha }}" \
+            ./${{ matrix.context }}
+
+  # ============================================================================
+  # Etapa 3 (IE5): Provision y configuracion automatizada de servicios Cloud
+  #   - AWS SQS + Dead Letter Queue (DLQ)
+  #   - AWS Lambda (FaaS) + Event Source Mapping
+  #   - Amazon API Gateway HTTP API v2
+  # ============================================================================
+  provision-cloud-infra:
+    name: Cloud Provisioning (SQS + Lambda + API Gateway)
+    needs: [ test-microservices, test-serverless ]
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    outputs:
+      sqs_queue_url: ${{ steps.provision.outputs.sqs_queue_url }}
+      apigw_url: ${{ steps.provision.outputs.apigw_url }}
+    steps:
+      - name: Checkout repositorio
+        uses: actions/checkout@v4
+
+      - name: Descargar JAR empaquetado de Lambda
+        uses: actions/download-artifact@v4
+        with:
+          name: procesador-postulaciones-jar
+          path: serverless/procesador-postulaciones/target
+
+      - name: Configurar credenciales AWS
+        if: ${{ secrets.AWS_ACCESS_KEY_ID != '' && secrets.AWS_SECRET_ACCESS_KEY != '' }}
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+          aws-region: ${{ vars.AWS_REGION || 'us-east-1' }}
+
+      - name: Provisionar SQS, DLQ, Lambda y Amazon API Gateway
+        id: provision
+        env:
+          HAS_AWS: ${{ secrets.AWS_ACCESS_KEY_ID != '' && secrets.AWS_SECRET_ACCESS_KEY != '' }}
+          AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
+          ENV_NAME: ${{ vars.ENV_NAME || 'dev' }}
+          SWARM_HOST: ${{ secrets.SWARM_HOST }}
+          GATEWAY_API_KEY: ${{ secrets.GATEWAY_API_KEY || 'talentoya-secret-key-2026' }}
+        run: |
+          if [[ "${HAS_AWS}" != "true" ]]; then
+            echo "::notice::Secrets AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY no configurados; se omite provision cloud."
+            exit 0
+          fi
+
+          APIGW_URL=""
+          if [[ -n "${SWARM_HOST}" ]]; then
+            chmod +x scripts/cloud/deploy-apigw.sh
+            BACKEND_BASE_URL="http://${SWARM_HOST}:8090" ./scripts/cloud/deploy-apigw.sh | tee apigw.log
+            APIGW_URL=$(grep '^APIGW_URL=' apigw.log | cut -d'=' -f2-)
+          fi
+
+          POSTULACIONES_API_URL=""
+          NOTIFICACIONES_API_URL=""
+          if [[ -n "${APIGW_URL}" ]]; then
+            POSTULACIONES_API_URL="${APIGW_URL}/api/postulaciones"
+            NOTIFICACIONES_API_URL="${APIGW_URL}/api/notificaciones"
+          elif [[ -n "${SWARM_HOST}" ]]; then
+            POSTULACIONES_API_URL="http://${SWARM_HOST}:8090/api/postulaciones"
+            NOTIFICACIONES_API_URL="http://${SWARM_HOST}:8090/api/notificaciones"
+          fi
+
+          chmod +x scripts/cloud/deploy-sqs-lambda.sh
+          SKIP_BUILD=true \
+          POSTULACIONES_API_URL="${POSTULACIONES_API_URL}" \
+          NOTIFICACIONES_API_URL="${NOTIFICACIONES_API_URL}" \
+          API_GATEWAY_KEY="${GATEWAY_API_KEY}" \
+          ./scripts/cloud/deploy-sqs-lambda.sh | tee sqs.log
+
+          QUEUE_URL=$(grep '^AWS_SQS_QUEUE_URL=' sqs.log | cut -d'=' -f2-)
+          echo "sqs_queue_url=${QUEUE_URL}" >> "$GITHUB_OUTPUT"
+          echo "apigw_url=${APIGW_URL}" >> "$GITHUB_OUTPUT"
+
+  # ============================================================================
+  # Etapa 4 (IE4 / IE6): Despliegue continuo a Docker Swarm en la nube y Smoke Test
+  # ============================================================================
+  deploy-swarm-cloud:
+    name: CD - Deploy Docker Swarm Stack
+    needs: [ build-and-push-images, provision-cloud-infra ]
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repositorio
+        uses: actions/checkout@v4
+
+      - name: Desplegar stack TalentoYa en Docker Swarm (SSH) y verificar endpoints
+        env:
+          SWARM_HOST: ${{ secrets.SWARM_HOST }}
+          SWARM_USER: ${{ secrets.SWARM_USER || 'ubuntu' }}
+          SWARM_SSH_KEY: ${{ secrets.SWARM_SSH_KEY }}
+          OWNER_RAW: ${{ github.repository_owner }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GHCR_USER: ${{ github.actor }}
+          AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
+          AWS_SQS_QUEUE_URL: ${{ needs.provision-cloud-infra.outputs.sqs_queue_url }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_SESSION_TOKEN: ${{ secrets.AWS_SESSION_TOKEN }}
+          GATEWAY_API_KEY: ${{ secrets.GATEWAY_API_KEY || 'talentoya-secret-key-2026' }}
+        run: |
+          if [[ -z "${SWARM_HOST}" || -z "${SWARM_SSH_KEY}" ]]; then
+            echo "::notice::Secrets SWARM_HOST/SWARM_SSH_KEY no configurados; se omite despliegue remoto."
+            exit 0
+          fi
+
+          mkdir -p ~/.ssh
+          printf '%s\n' "${SWARM_SSH_KEY}" > ~/.ssh/id_swarm
+          chmod 600 ~/.ssh/id_swarm
+          ssh-keyscan -H "${SWARM_HOST}" >> ~/.ssh/known_hosts
+
+          OWNER_LC=$(echo "$OWNER_RAW" | tr '[:upper:]' '[:lower:]')
+          DOCKER_REGISTRY="ghcr.io/${OWNER_LC}"
+          SQS_ENABLED="false"
+          if [[ -n "${AWS_SQS_QUEUE_URL}" ]]; then
+            SQS_ENABLED="true"
+          fi
+
+          scp -i ~/.ssh/id_swarm docker-compose.yml "${SWARM_USER}@${SWARM_HOST}:~/docker-compose.yml"
+
+          ssh -i ~/.ssh/id_swarm "${SWARM_USER}@${SWARM_HOST}" bash -s <<EOF
+            set -euo pipefail
+            echo "${GHCR_TOKEN}" | docker login ghcr.io -u "${GHCR_USER}" --password-stdin
+            export DOCKER_REGISTRY="${DOCKER_REGISTRY}"
+            export IMAGE_TAG="${IMAGE_TAG}"
+            export AWS_REGION="${AWS_REGION}"
+            export AWS_SQS_ENABLED="${SQS_ENABLED}"
+            export AWS_SQS_QUEUE_URL="${AWS_SQS_QUEUE_URL}"
+            export AWS_ACCESS_KEY_ID="${AWS_ACCESS_KEY_ID}"
+            export AWS_SECRET_ACCESS_KEY="${AWS_SECRET_ACCESS_KEY}"
+            export AWS_SESSION_TOKEN="${AWS_SESSION_TOKEN}"
+            export GATEWAY_API_KEY="${GATEWAY_API_KEY}"
+            docker stack deploy -c ~/docker-compose.yml --with-registry-auth --resolve-image always talentoya
+            docker stack services talentoya
+          EOF
+
+          echo "Verificando disponibilidad del API Gateway en la nube..."
+          for i in $(seq 1 12); do
+            if curl -fsS "http://${SWARM_HOST}:8090/health" >/dev/null; then
+              curl -fsS "http://${SWARM_HOST}:8090/health"
+              curl -fsS -H "X-API-Key: ${GATEWAY_API_KEY}" "http://${SWARM_HOST}:8090/api/postulaciones"
+              exit 0
+            fi
+            echo "Esperando arranque de servicios (intento ${i}/12)..."
+            sleep 5
+          done
+          echo "Error: el API Gateway no respondio a tiempo"
+          exit 1

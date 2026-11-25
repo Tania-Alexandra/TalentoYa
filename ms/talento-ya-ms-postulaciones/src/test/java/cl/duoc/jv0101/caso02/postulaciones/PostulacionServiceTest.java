@@ -10,6 +10,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import cl.duoc.jv0101.caso02.postulaciones.model.Postulacion;
 import cl.duoc.jv0101.caso02.postulaciones.repository.PostulacionRepository;
+import cl.duoc.jv0101.caso02.postulaciones.service.PostulacionQueueProducer;
 import cl.duoc.jv0101.caso02.postulaciones.service.PostulacionService;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -22,6 +23,9 @@ class PostulacionServiceTest {
 
     @Mock
     private PostulacionRepository repository;
+
+    @Mock
+    private PostulacionQueueProducer queueProducer;
 
     @InjectMocks
     private PostulacionService service;
@@ -56,7 +60,19 @@ class PostulacionServiceTest {
     @Test
     void crearGuarda() {
         when(repository.save(any())).thenReturn(recurso());
-        assertThat(service.create(recurso()).getNombre()).isEqualTo("Demo");
+        Postulacion creada = service.create(recurso());
+        assertThat(creada.getNombre()).isEqualTo("Demo");
+        verify(queueProducer).enviarPostulacion(creada);
+    }
+
+    @Test
+    void crearSinEstadoAsignaEnCola() {
+        Postulacion nueva = recurso();
+        nueva.setEstado(" ");
+        when(repository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+        Postulacion creada = service.create(nueva);
+        assertThat(creada.getEstado()).isEqualTo("EN_COLA");
+        verify(queueProducer).enviarPostulacion(creada);
     }
 
 @Test

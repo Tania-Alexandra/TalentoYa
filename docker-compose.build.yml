@@ -4,6 +4,9 @@
 # ==============================================================================
 
 services:
+  api-gateway:
+    build: ./api-gateway
+
   perfiles-svc:
     build: ./ms/talento-ya-ms-perfiles
 

@@ -13,8 +13,17 @@ STACK_NAME="${1:-talentoya}"
 export DOCKER_REGISTRY="${DOCKER_REGISTRY:-duoc}"
 export IMAGE_TAG="${IMAGE_TAG:-1.0.0}"
 
-echo "Desplegando stack '${STACK_NAME}' en Docker Swarm..."
-docker stack deploy -c docker-compose.yml --resolve-image changed "${STACK_NAME}"
+# Si se usan imagenes locales ('duoc'), evita consultar un registry remoto.
+if [[ -n "${RESOLVE_IMAGE:-}" ]]; then
+  RESOLVE_FLAG="${RESOLVE_IMAGE}"
+elif [[ "${DOCKER_REGISTRY}" == "duoc" ]]; then
+  RESOLVE_FLAG="never"
+else
+  RESOLVE_FLAG="changed"
+fi
+
+echo "Desplegando stack '${STACK_NAME}' en Docker Swarm (resolve-image=${RESOLVE_FLAG})..."
+docker stack deploy -c docker-compose.yml --resolve-image "${RESOLVE_FLAG}" "${STACK_NAME}"
 
 echo ""
 echo "=== Servicios del stack '${STACK_NAME}' ==="
