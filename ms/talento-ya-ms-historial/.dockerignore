@@ -1,5 +1,16 @@
 target/
+.mvn/
+mvnw
+mvnw.cmd
+docs/
+*.md
+*.pdf
 *.class
+*.iml
+*.log
+.git/
+.gitignore
 .idea/
 .vscode/
-*.iml
+docker-compose*.yml
+Dockerfile*
