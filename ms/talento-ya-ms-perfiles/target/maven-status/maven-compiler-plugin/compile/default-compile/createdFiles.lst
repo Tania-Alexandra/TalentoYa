@@ -1,0 +1,6 @@
+cl\duoc\jv0101\caso02\perfiles\config\OpenApiConfig.class
+cl\duoc\jv0101\caso02\perfiles\PerfilApplication.class
+cl\duoc\jv0101\caso02\perfiles\service\PerfilService.class
+cl\duoc\jv0101\caso02\perfiles\model\Perfil.class
+cl\duoc\jv0101\caso02\perfiles\controller\PerfilController.class
+cl\duoc\jv0101\caso02\perfiles\repository\PerfilRepository.class
