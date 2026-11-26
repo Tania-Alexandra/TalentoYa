@@ -1,0 +1,29 @@
+# ==============================================================================
+# Override para construir todas las imagenes localmente desde el monorepo:
+#   docker compose -f docker-compose.yml -f docker-compose.build.yml build
+# ==============================================================================
+
+services:
+  api-gateway:
+    build: ./api-gateway
+
+  perfiles-svc:
+    build: ./ms/talento-ya-ms-perfiles
+
+  historial-svc:
+    build: ./ms/talento-ya-ms-historial
+
+  postulaciones-svc:
+    build: ./ms/talento-ya-ms-postulaciones
+
+  busqueda-ofertas-svc:
+    build: ./ms/talento-ya-ms-busqueda
+
+  notificaciones-svc:
+    build: ./ms/talento-ya-ms-notificaciones
+
+  mensajeria-svc:
+    build: ./ms/talento-ya-ms-mensajeria
+
+  facturacion-svc:
+    build: ./ms/talento-ya-ms-facturacion

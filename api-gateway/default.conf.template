@@ -1,0 +1,92 @@
+server_tokens off;
+
+limit_req_zone $binary_remote_addr zone=api_limit:10m rate=10r/s;
+
+map $http_x_api_key $api_key_valid {
+    default 0;
+    "${GATEWAY_API_KEY}" 1;
+}
+
+server {
+    listen 8080;
+    server_name _;
+
+    # Docker embedded DNS para resolver servicios de Docker Swarm dinamicamente
+    resolver 127.0.0.11 valid=10s ipv6=off;
+
+    # Cabeceras de seguridad perimetral
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-Frame-Options "DENY" always;
+    add_header X-XSS-Protection "1; mode=block" always;
+    add_header Referrer-Policy "no-referrer" always;
+
+    # Endpoint publico de salud para Swarm/ALB/API Gateway
+    location = /health {
+        access_log off;
+        default_type application/json;
+        return 200 '{"status":"UP","gateway":"talentoya-api-gateway"}';
+    }
+
+    # Bloquea acceso externo a consolas internas H2
+    location ~* ^/h2-console {
+        default_type application/json;
+        return 403 '{"error":"Forbidden","message":"Acceso externo bloqueado a consola interna"}';
+    }
+
+    # Proteccion de rutas /api/* con API Key y Rate Limiting
+    location /api/ {
+        limit_req zone=api_limit burst=20 nodelay;
+        limit_req_status 429;
+
+        if ($api_key_valid = 0) {
+            return 401 '{"error":"Unauthorized","message":"Header X-API-Key invalido o ausente"}';
+        }
+
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_connect_timeout 5s;
+        proxy_read_timeout 30s;
+
+        # Enrutamiento por microservicio (Docker Swarm VIP)
+        location /api/perfiles {
+            set $upstream_perfiles "perfiles-svc:8080";
+            proxy_pass http://$upstream_perfiles;
+        }
+
+        location /api/registroLaborales {
+            set $upstream_historial "historial-svc:8080";
+            proxy_pass http://$upstream_historial;
+        }
+
+        location /api/postulaciones {
+            set $upstream_postulaciones "postulaciones-svc:8080";
+            proxy_pass http://$upstream_postulaciones;
+        }
+
+        location /api/ofertaTrabajos {
+            set $upstream_busqueda "busqueda-ofertas-svc:8080";
+            proxy_pass http://$upstream_busqueda;
+        }
+
+        location /api/notificaciones {
+            set $upstream_notificaciones "notificaciones-svc:8080";
+            proxy_pass http://$upstream_notificaciones;
+        }
+
+        location /api/mensajes {
+            set $upstream_mensajeria "mensajeria-svc:8080";
+            proxy_pass http://$upstream_mensajeria;
+        }
+
+        location /api/facturas {
+            set $upstream_facturacion "facturacion-svc:8080";
+            proxy_pass http://$upstream_facturacion;
+        }
+
+        default_type application/json;
+        return 404 '{"error":"Not Found","message":"Ruta no registrada en API Gateway"}';
+    }
+}

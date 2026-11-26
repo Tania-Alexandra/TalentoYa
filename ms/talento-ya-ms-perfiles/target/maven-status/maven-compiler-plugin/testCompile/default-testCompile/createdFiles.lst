@@ -1,0 +1,6 @@
+cl\duoc\jv0101\caso02\perfiles\OpenApiConfigTest.class
+cl\duoc\jv0101\caso02\perfiles\PerfilControllerTest.class
+cl\duoc\jv0101\caso02\perfiles\cucumber\CucumberSpringConfiguration.class
+cl\duoc\jv0101\caso02\perfiles\cucumber\CucumberRunnerTest.class
+cl\duoc\jv0101\caso02\perfiles\cucumber\PerfilSteps.class
+cl\duoc\jv0101\caso02\perfiles\PerfilServiceTest.class

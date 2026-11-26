@@ -1,0 +1,3 @@
+cl\duoc\jv0101\caso02\postulaciones\service\PostulacionQueueProducer.class
+cl\duoc\jv0101\caso02\postulaciones\config\SqsConfig.class
+cl\duoc\jv0101\caso02\postulaciones\dto\PostulacionEvent.class

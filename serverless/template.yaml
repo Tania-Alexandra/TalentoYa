@@ -1,0 +1,77 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  TalentoYa (JVY0101) - Cola SQS + Dead Letter Queue + Funcion Serverless Lambda (FaaS)
+  para procesamiento asincrono de postulaciones (IE5, IE10, IE11, IE13, IE14).
+
+Parameters:
+  EnvironmentName:
+    Type: String
+    Default: dev
+  PostulacionesApiUrl:
+    Type: String
+    Default: ""
+    Description: URL publica (API Gateway) de /api/postulaciones para actualizar estado a PROCESADA
+  NotificacionesApiUrl:
+    Type: String
+    Default: ""
+    Description: URL publica (API Gateway) de /api/notificaciones para disparar alerta
+  ApiGatewayKey:
+    Type: String
+    Default: "talentoya-secret-key-2026"
+    NoEcho: true
+    Description: API Key esperada en el header X-API-Key del API Gateway
+
+Resources:
+  PostulacionesDLQ:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub talentoya-postulaciones-dlq-${EnvironmentName}
+      MessageRetentionPeriod: 1209600
+
+  PostulacionesQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub talentoya-postulaciones-queue-${EnvironmentName}
+      VisibilityTimeout: 60
+      MessageRetentionPeriod: 345600
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt PostulacionesDLQ.Arn
+        maxReceiveCount: 3
+
+  ProcesadorPostulacionesFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub talentoya-procesador-postulaciones-${EnvironmentName}
+      CodeUri: procesador-postulaciones/target/procesador-postulaciones-1.0.0.jar
+      Handler: cl.duoc.jv0101.caso02.lambda.ProcesadorPostulacionesHandler::handleRequest
+      Runtime: java21
+      MemorySize: 512
+      Timeout: 30
+      Environment:
+        Variables:
+          POSTULACIONES_API_URL: !Ref PostulacionesApiUrl
+          NOTIFICACIONES_API_URL: !Ref NotificacionesApiUrl
+          API_GATEWAY_KEY: !Ref ApiGatewayKey
+      Events:
+        PostulacionesSqsTrigger:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt PostulacionesQueue.Arn
+            BatchSize: 10
+            FunctionResponseTypes:
+              - ReportBatchItemFailures
+
+Outputs:
+  PostulacionesQueueUrl:
+    Description: URL de la cola SQS para configurar AWS_SQS_QUEUE_URL en ms-postulaciones
+    Value: !Ref PostulacionesQueue
+  PostulacionesQueueArn:
+    Description: ARN de la cola SQS principal
+    Value: !GetAtt PostulacionesQueue.Arn
+  PostulacionesDlqUrl:
+    Description: URL de la Dead Letter Queue (DLQ)
+    Value: !Ref PostulacionesDLQ
+  LambdaFunctionArn:
+    Description: ARN de la funcion Lambda Procesador de Postulaciones
+    Value: !GetAtt ProcesadorPostulacionesFunction.Arn
