@@ -248,7 +248,45 @@ Definido en [`.github/workflows/ci-cd.yml`](.github/workflows/ci-cd.yml), se eje
 * **API Gateway ([`api-gateway/`](api-gateway/README.md)):** Punto de entrada único en el puerto `8090` (y opcionalmente expuesto con Amazon API Gateway HTTP API v2). Aplica autenticación por header `X-API-Key`, *rate limiting* (`10 req/s`, `burst=20`), cabeceras de seguridad y bloqueo de `/h2-console`.
 * **Cola SQS + Lambda FaaS ([`serverless/procesador-postulaciones/`](serverless/procesador-postulaciones/README.md)):** `talento-ya-ms-postulaciones` publica cada postulación creada (`estado: EN_COLA`) en AWS SQS; la función AWS Lambda Java 21 consume el lote y actualiza la postulación a `PROCESADA` a través del API Gateway.
 
+## 10.3. Uso local y pruebas de humo
+
+### 10.3.1. Ejecutar la arquitectura localmente
+- Levanta los micro‑servicios con Docker Swarm:
+
+```bash
+./scripts/swarm/03-deploy-stack.sh
+```
+
+- El API‑Gateway escucha en el puerto **8090**. 
+
+### 10.3.2. Prueba de extremo a extremo (smoke test)
+
+```bash
+curl -X POST -H "X-API-Key: <GATEWAY_API_KEY>" \
+     http://localhost:8090/api/postulaciones \
+     -H "Content-Type: application/json" \
+     -d '{"candidatoId":123,"vacanteId":45}'
+```
+
+1. La petición crea una postulación con `estado=EN_COLA`.
+2. La cola **AWS SQS** (simulada/local) recibe el mensaje.
+3. La **Lambda** (desplegada en la nube) consume el mensaje y actualiza el estado a `PROCESADA` mediante el API‑Gateway.
+4. (Opcional) Se envía una notificación al micro‑servicio `notificaciones‑svc`.
+
+### 10.3.3. Desactivar SQS para desarrollo local
+Si no deseas depender de AWS durante pruebas locales, define la variable:
+
+```bash
+export AWS_SQS_ENABLED=false   # Linux/macOS
+set AWS_SQS_ENABLED=false      # Windows PowerShell
+```
+
+Con esta configuración el productor de SQS registra un mensaje **“LOCAL‑NOOP”** y la Lambda no se ejecuta.
+
 ## 11. Integrantes
+
+* **Estudiante 1:** Tania Gaete
+* **Estudiante 2:** Arianette Pavez
 
 * **Estudiante 1:** Tania Gaete
 * **Estudiante 2:** Arianette Pavez
